@@ -4,3 +4,5 @@ dist/
 outputs/
 *.log
 .DS_Store
+*.db-shm
+*.db-wal
