@@ -77,6 +77,24 @@ const UNSAFE_OUTPUT_PATTERNS = [
   { type: "sql_injection_output", pattern: /(?:DROP\s+TABLE|DELETE\s+FROM|UPDATE\s+.*SET\s+.*WHERE|INSERT\s+INTO).*(?:--|;)/i, severity: "medium" },
 ];
 
+// ─── Precompiled Combined Patterns (performance optimization) ──
+// Instead of looping through 20+ individual patterns, combine into single regex where possible
+const JAILBREAK_COMBINED = new RegExp(
+  JAILBREAK_PATTERNS.map(p => `(?:${p.source})`).join("|"), "i"
+);
+
+const INJECTION_COMBINED = new RegExp(
+  INJECTION_PATTERNS.map(p => `(?:${p.source})`).join("|"), "is"
+);
+
+const UNSAFE_OUTPUT_COMBINED_HIGH = new RegExp(
+  UNSAFE_OUTPUT_PATTERNS.filter(p => p.severity === "high").map(p => `(?:${p.pattern.source})`).join("|"), "i"
+);
+
+const UNSAFE_OUTPUT_COMBINED_MEDIUM = new RegExp(
+  UNSAFE_OUTPUT_PATTERNS.filter(p => p.severity === "medium").map(p => `(?:${p.pattern.source})`).join("|"), "i"
+);
+
 // ─── Guardrails Engine ──────────────────────────────
 class GuardrailsEngine {
   constructor(logger) {
@@ -136,33 +154,26 @@ class GuardrailsEngine {
       });
     }
 
-    // Jailbreak detection
+    // Jailbreak detection (precompiled single-pass regex)
     if (this.config.input.jailbreakDetection) {
-      for (const pattern of JAILBREAK_PATTERNS) {
-        if (pattern.test(text)) {
-          violations.push({
-            type: "jailbreak_attempt",
-            severity: "high",
-            message: "Jailbreak attempt detected",
-            pattern: pattern.source.slice(0, 60),
-          });
-          this.stats.jailbreakAttempts++;
-          break; // one match is enough
-        }
+      if (JAILBREAK_COMBINED.test(text)) {
+        violations.push({
+          type: "jailbreak_attempt",
+          severity: "high",
+          message: "Jailbreak attempt detected",
+        });
+        this.stats.jailbreakAttempts++;
       }
     }
 
-    // Prompt injection detection
+    // Prompt injection detection (precompiled single-pass regex)
     if (this.config.input.promptInjection) {
-      for (const pattern of INJECTION_PATTERNS) {
-        if (pattern.test(text)) {
-          violations.push({
-            type: "prompt_injection",
-            severity: "high",
-            message: "Prompt injection attempt detected",
-          });
-          break;
-        }
+      if (INJECTION_COMBINED.test(text)) {
+        violations.push({
+          type: "prompt_injection",
+          severity: "high",
+          message: "Prompt injection attempt detected",
+        });
       }
     }
 
@@ -229,15 +240,21 @@ class GuardrailsEngine {
     const violations = [];
     let sanitized = text;
 
-    // Content safety
+    // Content safety (precompiled single-pass)
     if (this.config.output.contentSafety) {
-      for (const pattern of UNSAFE_OUTPUT_PATTERNS) {
-        if (pattern.pattern.test(text)) {
-          violations.push({
-            type: pattern.type,
-            severity: pattern.severity,
-            message: `Unsafe content detected: ${pattern.type}`,
-          });
+      if (UNSAFE_OUTPUT_COMBINED_HIGH.test(text)) {
+        // Find which specific pattern matched for reporting
+        for (const pattern of UNSAFE_OUTPUT_PATTERNS.filter(p => p.severity === "high")) {
+          if (pattern.pattern.test(text)) {
+            violations.push({ type: pattern.type, severity: pattern.severity, message: `Unsafe content detected: ${pattern.type}` });
+          }
+        }
+      }
+      if (UNSAFE_OUTPUT_COMBINED_MEDIUM.test(text)) {
+        for (const pattern of UNSAFE_OUTPUT_PATTERNS.filter(p => p.severity === "medium")) {
+          if (pattern.pattern.test(text)) {
+            violations.push({ type: pattern.type, severity: pattern.severity, message: `Unsafe content detected: ${pattern.type}` });
+          }
         }
       }
     }

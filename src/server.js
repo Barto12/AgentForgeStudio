@@ -23,6 +23,7 @@ import { Orchestrator } from "./engine/orchestrator.js";
 import { createRoutes } from "./api/routes.js";
 import { WSManager } from "./api/websocket.js";
 import { createGuardrails } from "./engine/guardrails.js";
+import { SettingsStore } from "./engine/persistence.js";
 
 // ─── Configuration ────────────────────────────────────
 config(); // Load .env
@@ -53,11 +54,12 @@ let anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   : null;
 
-// Dynamic settings store (in-memory, configurable from UI)
+// Dynamic settings store (persistent via SQLite, configurable from UI)
+const savedSettings = SettingsStore.getAll();
 const dynamicSettings = {
-  apiKeys: {},
-  provider: "anthropic",
-  model: "",
+  apiKeys: savedSettings.apiKeys || {},
+  provider: savedSettings.provider || "anthropic",
+  model: savedSettings.model || "",
 };
 
 function getActiveAnthropicClient() {
@@ -199,14 +201,15 @@ app.post("/api/settings", (req, res) => {
       }
     }
     dynamicSettings.apiKeys = sanitized;
+    SettingsStore.set("apiKeys", sanitized);
     logger.info(`API keys updated: ${Object.keys(sanitized).join(", ")}`);
     const activeAnthropicClient = getActiveAnthropicClient();
     if (activeAnthropicClient) {
       orchestrator.client = activeAnthropicClient;
     }
   }
-  if (typeof provider === "string") dynamicSettings.provider = provider;
-  if (typeof model === "string") dynamicSettings.model = model;
+  if (typeof provider === "string") { dynamicSettings.provider = provider; SettingsStore.set("provider", provider); }
+  if (typeof model === "string") { dynamicSettings.model = model; SettingsStore.set("model", model); }
   res.json({ success: true, provider: dynamicSettings.provider, model: dynamicSettings.model });
 });
 

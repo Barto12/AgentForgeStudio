@@ -66,10 +66,26 @@ function initSchema() {
       FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS schema_version (
+      version INTEGER PRIMARY KEY
+    );
+
     CREATE INDEX IF NOT EXISTS idx_messages_conv ON chat_messages(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
     CREATE INDEX IF NOT EXISTS idx_workflows_created ON workflows(created_at);
   `);
+
+  // Schema versioning
+  const currentVersion = d.prepare("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1").get();
+  if (!currentVersion) {
+    d.prepare("INSERT INTO schema_version (version) VALUES (?)").run(1);
+  }
 }
 
 // ─── Workflow Persistence ────────────────────────────
@@ -188,6 +204,37 @@ export const ChatStore = {
       toolCalls: r.tool_calls ? JSON.parse(r.tool_calls) : undefined,
       timestamp: r.timestamp,
     }));
+  },
+};
+
+// ─── Settings Persistence ────────────────────────────
+export const SettingsStore = {
+  get(key) {
+    const d = getDb();
+    const row = d.prepare("SELECT value FROM app_settings WHERE key = ?").get(key);
+    if (!row) return null;
+    try { return JSON.parse(row.value); } catch { return row.value; }
+  },
+
+  set(key, value) {
+    const d = getDb();
+    const serialized = typeof value === "string" ? value : JSON.stringify(value);
+    d.prepare("INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)").run(key, serialized, new Date().toISOString());
+  },
+
+  delete(key) {
+    const d = getDb();
+    d.prepare("DELETE FROM app_settings WHERE key = ?").run(key);
+  },
+
+  getAll() {
+    const d = getDb();
+    const rows = d.prepare("SELECT key, value FROM app_settings").all();
+    const result = {};
+    for (const row of rows) {
+      try { result[row.key] = JSON.parse(row.value); } catch { result[row.key] = row.value; }
+    }
+    return result;
   },
 };
 

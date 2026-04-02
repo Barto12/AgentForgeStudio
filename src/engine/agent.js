@@ -74,7 +74,8 @@ Los archivos y comandos son REALES en el disco del usuario.
   }
 
   /**
-   * Build the messages array for the API call
+   * Build the messages array for the API call.
+   * Includes context window estimation to prevent exceeding model limits.
    */
   buildMessages(objective, contextFromPrevAgent = null, sharedMemory = null) {
     const parts = [];
@@ -94,7 +95,39 @@ Los archivos y comandos son REALES en el disco del usuario.
     parts.push(`## Objetivo Principal\n${objective}`);
     parts.push(`\nEjecuta tu rol ahora. Si necesitas crear archivos, código o ejecutar comandos, USA las herramientas disponibles.`);
 
-    return [{ role: "user", content: parts.join("\n\n") }];
+    const content = parts.join("\n\n");
+
+    // Estimate token count (~4 chars per token) and warn/truncate if too large
+    const estimatedTokens = Math.ceil(content.length / 4);
+    const MODEL_CONTEXT_LIMITS = {
+      "claude-sonnet-4-20250514": 200000,
+      "claude-opus-4-20250514": 200000,
+      "claude-3-5-sonnet-20241022": 200000,
+      "claude-3-haiku-20240307": 200000,
+      "gemini-2.0-flash": 1000000,
+      "gemini-1.5-pro": 2000000,
+    };
+    const modelLimit = MODEL_CONTEXT_LIMITS[this.config.model] || 200000;
+    // Reserve tokens for system prompt (~2000) + max output tokens
+    const availableInputTokens = modelLimit - this.config.maxTokens - 2000;
+
+    if (estimatedTokens > availableInputTokens) {
+      // Truncate context from previous agent (largest part) to fit
+      const excessChars = (estimatedTokens - availableInputTokens) * 4;
+      if (contextFromPrevAgent && contextFromPrevAgent.length > excessChars) {
+        const truncated = contextFromPrevAgent.slice(0, contextFromPrevAgent.length - excessChars - 200);
+        const truncatedParts = [];
+        if (sharedMemory && Object.keys(sharedMemory).length > 0) {
+          truncatedParts.push(`## Memoria Compartida del Workflow\n${JSON.stringify(sharedMemory, null, 2)}`);
+        }
+        truncatedParts.push(`## Output del Agente Anterior (truncado por límite de contexto)\n${truncated}\n\n[... contenido truncado para respetar el límite del modelo ...]`);
+        truncatedParts.push(`## Objetivo Principal\n${objective}`);
+        truncatedParts.push(`\nEjecuta tu rol ahora. Si necesitas crear archivos, código o ejecutar comandos, USA las herramientas disponibles.`);
+        return [{ role: "user", content: truncatedParts.join("\n\n") }];
+      }
+    }
+
+    return [{ role: "user", content }];
   }
 
   /**
