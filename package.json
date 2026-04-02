@@ -9,12 +9,15 @@
     "dev": "node --watch src/server.js",
     "build": "cd frontend && npx vite build",
     "frontend": "cd frontend && npx vite --open",
+    "lint": "eslint src/ frontend/src/ --ext .js,.jsx",
+    "lint:fix": "eslint src/ frontend/src/ --ext .js,.jsx --fix",
+    "format": "prettier --write \"src/**/*.js\" \"frontend/src/**/*.{js,jsx}\"",
     "setup": "npm install && cd frontend && npm install"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@google/generative-ai": "^0.24.1",
-    "better-sqlite3": "^11.7.0",
+    "better-sqlite3": "^12.8.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
@@ -25,7 +28,10 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "eslint": "^8.57.0",
+    "eslint-plugin-react": "^7.34.0",
+    "nodemon": "^3.1.0",
+    "prettier": "^3.2.0"
   },
   "author": "DevNexAI",
   "license": "MIT"
