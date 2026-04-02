@@ -61,9 +61,10 @@ export const api = {
 };
 
 // WebSocket connection for real-time events
-export function connectWorkflowWS(workflowId, onEvent) {
+export function connectWorkflowWS(workflowId, onEvent, token) {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}/ws/${workflowId}`;
+  const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+  const wsUrl = `${protocol}//${window.location.host}/ws/${workflowId}${tokenParam}`;
   const ws = new WebSocket(wsUrl);
 
   ws.onmessage = (event) => {
@@ -81,7 +82,7 @@ export function connectWorkflowWS(workflowId, onEvent) {
 
   return {
     close: () => ws.close(),
-    subscribe: (wfId) => ws.send(JSON.stringify({ type: "subscribe", workflowId: wfId })),
+    subscribe: (wfId, tkn) => ws.send(JSON.stringify({ type: "subscribe", workflowId: wfId, token: tkn })),
   };
 }
 

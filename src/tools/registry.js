@@ -210,8 +210,8 @@ class ToolRegistryClass {
             return "❌ Comando bloqueado por seguridad";
           }
           // Block shell escape operators that could chain dangerous commands
-          if (/[;`\n\r]|\$\(|\|\||&&/.test(command)) {
-            return "❌ Operadores de shell (;, &&, ||, ``, $(), newlines) no permitidos por seguridad. Usa comandos simples.";
+          if (/[;`\n\r]|\$\(|\|\||&&|\|/.test(command)) {
+            return "❌ Operadores de shell (;, &&, ||, |, ``, $(), newlines) no permitidos por seguridad. Usa comandos simples.";
           }
           // Use execFile with explicit shell to prevent injection via argument manipulation
           const isWindows = process.platform === "win32";

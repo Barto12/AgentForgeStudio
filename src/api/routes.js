@@ -10,6 +10,7 @@ import { getPreset, listPresets } from "../engine/presets.js";
 import { ToolRegistry, WORKSPACE_ROOT } from "../tools/registry.js";
 import { CONFIG } from "../config.js";
 import { WorkflowStore, ChatStore } from "../engine/persistence.js";
+import { generateWsToken } from "../api/websocket.js";
 import { v4 as uuidv4 } from "uuid";
 
 // ─── Google Gemini Chat Handler ─────────────────────
@@ -375,6 +376,9 @@ Instrucciones:
 
       const workflow = orchestrator.createWorkflow(workflowDef);
 
+      // Generate auth token for WebSocket subscription
+      const wsToken = generateWsToken(workflow.id);
+
       // Execute asynchronously — stream events through WebSocket
       const executionPromise = orchestrator.executeWorkflow(workflow.id, {
         onEvent: (event) => {
@@ -389,6 +393,7 @@ Instrucciones:
         status: workflow.status,
         message: "Workflow created and executing. Connect via WebSocket for real-time updates.",
         wsUrl: `ws://${req.headers.host}/ws/${workflow.id}`,
+        wsToken,
         agents: workflow.agents.map((a) => a.toJSON()),
       });
 

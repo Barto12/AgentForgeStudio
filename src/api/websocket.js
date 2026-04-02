@@ -2,7 +2,37 @@
 // WebSocket manager — streams real-time agent execution events to connected clients
 
 import { WebSocketServer } from "ws";
+import { randomBytes } from "crypto";
 import { CONFIG } from "../config.js";
+
+// ─── Token store for WebSocket auth ─────────────────
+const wsTokens = new Map(); // token -> { workflowId, expiresAt }
+const TOKEN_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+export function generateWsToken(workflowId) {
+  const token = randomBytes(24).toString("hex");
+  wsTokens.set(token, { workflowId, expiresAt: Date.now() + TOKEN_TTL_MS });
+  return token;
+}
+
+function validateWsToken(token, workflowId) {
+  const entry = wsTokens.get(token);
+  if (!entry) return false;
+  if (Date.now() > entry.expiresAt) {
+    wsTokens.delete(token);
+    return false;
+  }
+  if (entry.workflowId !== workflowId) return false;
+  return true;
+}
+
+// Periodically clean expired tokens
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, entry] of wsTokens) {
+    if (now > entry.expiresAt) wsTokens.delete(token);
+  }
+}, 60_000);
 
 export class WSManager {
   constructor(server, logger) {
@@ -13,11 +43,20 @@ export class WSManager {
     this.wss.on("connection", (ws, req) => {
       ws.isAlive = true;
 
-      // Extract workflow ID from URL: /ws/:workflowId
-      const urlParts = req.url?.split("/") || [];
-      const workflowId = urlParts[urlParts.length - 1];
+      // Extract workflow ID and token from URL: /ws/:workflowId?token=xxx
+      const urlParts = (req.url || "").split("?");
+      const pathParts = urlParts[0].split("/");
+      const workflowId = pathParts[pathParts.length - 1];
+      const params = new URLSearchParams(urlParts[1] || "");
+      const token = params.get("token");
 
+      // ─── Auth: validate token for workflow subscription ───
       if (workflowId && workflowId !== "ws") {
+        if (!token || !validateWsToken(token, workflowId)) {
+          ws.close(4001, "Unauthorized: invalid or expired token");
+          this.logger?.warn({ msg: "WebSocket auth failed", workflowId });
+          return;
+        }
         this.subscribe(ws, workflowId);
       }
 
@@ -26,8 +65,12 @@ export class WSManager {
       ws.on("message", (data) => {
         try {
           const msg = JSON.parse(data.toString());
-          if (msg.type === "subscribe" && msg.workflowId) {
-            this.subscribe(ws, msg.workflowId);
+          if (msg.type === "subscribe" && msg.workflowId && msg.token) {
+            if (validateWsToken(msg.token, msg.workflowId)) {
+              this.subscribe(ws, msg.workflowId);
+            } else {
+              ws.send(JSON.stringify({ type: "error", message: "Unauthorized" }));
+            }
           }
           if (msg.type === "unsubscribe" && msg.workflowId) {
             this.unsubscribe(ws, msg.workflowId);
